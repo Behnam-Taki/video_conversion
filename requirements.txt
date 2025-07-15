@@ -2,3 +2,4 @@ fastapi
 boto3
 requests
 uvicorn
+gdown
