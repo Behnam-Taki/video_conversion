@@ -1,11 +1,12 @@
+# app.py
+
 import os
 import subprocess
+from urllib.parse import urlparse
 import traceback
-from urllib.parse import urlparse, parse_qs
 
 import boto3
 import requests
-import gdown
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -20,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MinIO S3-compatible setup
+# MinIO setup
 s3 = boto3.client(
     's3',
     endpoint_url='https://minio-api.farazpardazan.com',
@@ -31,7 +32,6 @@ s3 = boto3.client(
 BUCKET = "test"
 FOLDER = "maketest"
 
-
 @app.post("/convert")
 async def convert_video(request: Request):
     try:
@@ -41,41 +41,52 @@ async def convert_video(request: Request):
             return {"error": "❌ No URL provided in the request."}
         print(f"📥 Request received. Downloading from: {url}")
 
-        # If it's a Google Drive link, extract file ID and use gdown
-        if "drive.google.com" in url:
-            file_id = parse_qs(urlparse(url).query).get("id", [None])[0]
-            if not file_id:
-                return {"error": "❌ Invalid Google Drive URL"}
-            gdown_url = f"https://drive.google.com/uc?id={file_id}"
-            filename = f"{file_id}.mov"
-            print(f"📦 Downloading via gdown from: {gdown_url} → {filename}")
-            gdown.download(gdown_url, filename, quiet=False)
-        else:
-            filename = os.path.basename(urlparse(url).path)
-            r = requests.get(url)
-            print(f"📦 Download status code: {r.status_code}")
-            if r.status_code != 200:
-                return {"error": f"❌ Failed to download file. Status: {r.status_code}"}
-            with open(filename, "wb") as f:
-                f.write(r.content)
-            print(f"✅ File saved locally: {filename}")
+        filename = os.path.basename(urlparse(url).path)
+        print(f"📄 Extracted filename: {filename}")
 
-        # Rename if needed
+        # Download
+        r = requests.get(url)
+        print(f"📦 Download status code: {r.status_code}")
+        if r.status_code != 200:
+            return {"error": f"❌ Failed to download file. Status: {r.status_code}"}
+        with open(filename, "wb") as f:
+            f.write(r.content)
+        print(f"✅ File saved locally: {filename}")
+
+        # Rename
         if "_RAW_V1" in filename:
             newname = filename.replace("_RAW_V1", "")
             os.rename(filename, newname)
             filename = newname
             print(f"✏️ Renamed to: {filename}")
 
-        # Conversion
         folder = f"{filename[:-4]}-massUpload"
         os.makedirs(folder, exist_ok=True)
         output_file = f"{folder}/{filename[:-4]}.mp4"
 
-        command = f"""ffmpeg -i "{filename}" -qscale 0 -pix_fmt yuv420p -filter:v fps=fps=24 -vf scale=1080:1920 -c:a copy "{output_file}" """
-        print(f"🎞 Running ffmpeg: {command}")
-        result = subprocess.call(command, shell=True)
-        print(f"🎬 ffmpeg exit code: {result}")
+        # FFmpeg command
+        command = [
+            "ffmpeg",
+            "-i", filename,
+            "-qscale", "0",
+            "-pix_fmt", "yuv420p",
+            "-filter:v", "fps=fps=24",
+            "-vf", "scale=1080:1920",
+            "-c:a", "copy",
+            output_file
+        ]
+
+        print("🎞 Running ffmpeg command:")
+        print(" ".join(command))
+
+        result = subprocess.run(command, capture_output=True, text=True)
+        print("📄 ffmpeg stdout:")
+        print(result.stdout)
+        print("⚠️ ffmpeg stderr:")
+        print(result.stderr)
+
+        if result.returncode != 0:
+            return {"error": "❌ ffmpeg failed during execution.", "details": result.stderr}
 
         if not os.path.exists(output_file):
             return {"error": "❌ ffmpeg failed. Output file not found."}
