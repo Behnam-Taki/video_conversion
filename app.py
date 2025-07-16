@@ -76,8 +76,7 @@ async def convert_video(request: Request):
             "-i", filename,
             "-qscale", "0",
             "-pix_fmt", "yuv420p",
-            "-filter:v", "fps=fps=24",
-            "-vf", "scale=1080:1920",
+            "-filter:v", "fps=24,scale=1080:1920",
             "-c:a", "copy",
             output_file
         ]
