@@ -1,20 +1,25 @@
-# Use official Python image as base
+# Use official Python base image
 FROM python:3.12-slim
 
-# Install ffmpeg
-RUN apt-get update && \
-    apt-get install -y ffmpeg && \
-    apt-get clean
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
+
+# Install ffmpeg and other dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements and install
+# Copy dependency files and install
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy rest of app
+# Copy the application
 COPY . .
 
-# Run FastAPI with Uvicorn on port 8080 (needed for Railway)
+# Run the server
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8080"]
