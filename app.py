@@ -44,7 +44,12 @@ async def convert_video(request: Request):
         filename = os.path.basename(urlparse(url).path)
         print(f"📄 Extracted filename: {filename}")
 
-        # Download
+        # اگر نام فایل پسوند ندارد، .mov اضافه شود
+        if not filename.lower().endswith(".mov"):
+            filename += ".mov"
+            print(f"📛 Appended .mov to filename. New filename: {filename}")
+
+        # دانلود فایل
         r = requests.get(url)
         print(f"📦 Download status code: {r.status_code}")
         if r.status_code != 200:
@@ -53,18 +58,19 @@ async def convert_video(request: Request):
             f.write(r.content)
         print(f"✅ File saved locally: {filename}")
 
-        # Rename
+        # تغییر نام در صورت نیاز
         if "_RAW_V1" in filename:
             newname = filename.replace("_RAW_V1", "")
             os.rename(filename, newname)
             filename = newname
             print(f"✏️ Renamed to: {filename}")
 
-        folder = f"{filename[:-4]}-massUpload"
+        basename = filename[:-4]
+        folder = f"{basename}-massUpload"
         os.makedirs(folder, exist_ok=True)
-        output_file = f"{folder}/{filename[:-4]}.mp4"
+        output_file = f"{folder}/{basename}.mp4"
 
-        # FFmpeg command
+        # اجرای ffmpeg
         command = [
             "ffmpeg",
             "-i", filename,
@@ -92,7 +98,7 @@ async def convert_video(request: Request):
             return {"error": "❌ ffmpeg failed. Output file not found."}
         print(f"✅ Converted file exists: {output_file}")
 
-        # Upload to MinIO
+        # آپلود به MinIO
         s3.upload_file(output_file, BUCKET, f"{FOLDER}/{os.path.basename(output_file)}")
         print(f"☁️ Uploaded to MinIO: {FOLDER}/{os.path.basename(output_file)}")
 
