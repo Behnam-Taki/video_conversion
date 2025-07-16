@@ -44,12 +44,12 @@ async def convert_video(request: Request):
         filename = os.path.basename(urlparse(url).path)
         print(f"📄 Extracted filename: {filename}")
 
-        # اگر نام فایل پسوند ندارد، .mov اضافه شود
-        if not filename.lower().endswith(".mov"):
+        # Add .mov if extension is missing
+        if not os.path.splitext(filename)[1]:
             filename += ".mov"
             print(f"📛 Appended .mov to filename. New filename: {filename}")
 
-        # دانلود فایل
+        # Download the file
         r = requests.get(url)
         print(f"📦 Download status code: {r.status_code}")
         if r.status_code != 200:
@@ -58,21 +58,22 @@ async def convert_video(request: Request):
             f.write(r.content)
         print(f"✅ File saved locally: {filename}")
 
-        # تغییر نام در صورت نیاز
+        # Rename if needed
         if "_RAW_V1" in filename:
             newname = filename.replace("_RAW_V1", "")
             os.rename(filename, newname)
             filename = newname
             print(f"✏️ Renamed to: {filename}")
 
-        basename = filename[:-4]
+        basename = os.path.splitext(filename)[0]
         folder = f"{basename}-massUpload"
         os.makedirs(folder, exist_ok=True)
         output_file = f"{folder}/{basename}.mp4"
 
-        # اجرای ffmpeg
+        # FFmpeg command with -y flag to overwrite
         command = [
             "ffmpeg",
+            "-y",  # overwrite without asking
             "-i", filename,
             "-qscale", "0",
             "-pix_fmt", "yuv420p",
@@ -91,13 +92,16 @@ async def convert_video(request: Request):
         print(result.stderr)
 
         if result.returncode != 0:
-            return {"error": "❌ ffmpeg failed during execution.", "details": result.stderr}
+            return {
+                "error": "❌ ffmpeg failed during execution.",
+                "details": result.stderr
+            }
 
         if not os.path.exists(output_file):
             return {"error": "❌ ffmpeg failed. Output file not found."}
         print(f"✅ Converted file exists: {output_file}")
 
-        # آپلود به MinIO
+        # Upload to MinIO
         s3.upload_file(output_file, BUCKET, f"{FOLDER}/{os.path.basename(output_file)}")
         print(f"☁️ Uploaded to MinIO: {FOLDER}/{os.path.basename(output_file)}")
 
