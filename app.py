@@ -34,7 +34,6 @@ FOLDER = "maketest"
 @app.post("/convert")
 async def convert_video(request: Request):
     try:
-        # Get JSON payload
         try:
             data = await request.json()
         except Exception:
@@ -46,14 +45,12 @@ async def convert_video(request: Request):
             return {"error": "❌ No URL provided."}
         print(f"📥 Downloading from: {url}")
 
-        # Get filename
         filename = os.path.basename(urlparse(url).path)
         name, ext = os.path.splitext(filename)
         if not ext:
             filename += ".mov"
             print(f"📛 Appended .mov: {filename}")
 
-        # Download video
         r = requests.get(url)
         print(f"📦 Download status code: {r.status_code}")
         if r.status_code != 200:
@@ -66,7 +63,6 @@ async def convert_video(request: Request):
         if size < 10000:
             print("⚠️ File may not be valid (too small).")
 
-        # Clean filename if needed
         if "_RAW_V1" in filename:
             newname = filename.replace("_RAW_V1", "")
             os.rename(filename, newname)
@@ -78,7 +74,7 @@ async def convert_video(request: Request):
         os.makedirs(folder, exist_ok=True)
         output_file = f"{folder}/{basename}.mp4"
 
-        # Run ffmpeg (tested config)
+        # FFmpeg command
         command = [
             "ffmpeg",
             "-y",
@@ -109,15 +105,15 @@ async def convert_video(request: Request):
             return {"error": "❌ Output not found after ffmpeg."}
         print(f"✅ Output created: {output_file}")
 
-        # Rename output file if contains " RAW"
+        # Clean up filename from " RAW"
         for f in glob.glob(f"{folder}/*.mp4"):
             if " RAW" in f:
                 new_f = f.replace(" RAW", "")
                 os.rename(f, new_f)
                 print(f"🧽 Renamed output to: {new_f}")
-                output_file = new_f  # update path
+                output_file = new_f
 
-        # Upload to MinIO
+        # Upload
         s3.upload_file(output_file, BUCKET, f"{FOLDER}/{os.path.basename(output_file)}")
         print(f"☁️ Uploaded to MinIO: {FOLDER}/{os.path.basename(output_file)}")
 
