@@ -80,15 +80,15 @@ async def convert_video(request: Request):
         os.makedirs(folder, exist_ok=True)
         output_file = f"{folder}/{basename}.mp4"
 
-        # Run ffmpeg
+        # Run ffmpeg (chosen stable variant)
         command = [
             "ffmpeg",
             "-y",
             "-i", filename,
-            "-qscale", "0",
-            "-pix_fmt", "yuv420p",
-            "-filter:v", "fps=24,scale=1080:1920",
-            "-c:a", "copy",
+            "-vf", "fps=24,scale=1080:1920",
+            "-c:v", "libx264",
+            "-c:a", "aac",
+            "-strict", "experimental",
             output_file
         ]
 
