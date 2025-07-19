@@ -57,11 +57,13 @@ async def convert_video(request: Request):
             return {"error": f"❌ Failed to download. Status {r.status_code}"}
         with open(filename, "wb") as f:
             f.write(r.content)
+
         size = os.path.getsize(filename)
         print(f"✅ File saved: {filename} ({size} bytes)")
 
-        if size < 10000:
-            print("⚠️ File may not be valid (too small).")
+        # 🔸 Reject too small files (very likely not a valid video)
+        if size < 50000:
+            return {"error": f"❌ File too small to be a valid video. Size: {size} bytes."}
 
         if "_RAW_V1" in filename:
             newname = filename.replace("_RAW_V1", "")
@@ -74,7 +76,7 @@ async def convert_video(request: Request):
         os.makedirs(folder, exist_ok=True)
         output_file = f"{folder}/{basename}.mp4"
 
-        # FFmpeg command
+        # ✅ ffmpeg command with -pix_fmt to ensure color compatibility
         command = [
             "ffmpeg",
             "-y",
@@ -83,6 +85,7 @@ async def convert_video(request: Request):
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-crf", "23",
+            "-pix_fmt", "yuv420p",  # ✅ added to fix output compatibility
             "-c:a", "aac",
             "-strict", "experimental",
             output_file
@@ -101,8 +104,8 @@ async def convert_video(request: Request):
                 "details": result.stderr
             }
 
-        if not os.path.exists(output_file):
-            return {"error": "❌ Output not found after ffmpeg."}
+        if not os.path.exists(output_file) or os.path.getsize(output_file) < 50000:
+            return {"error": "❌ Output not found or too small after ffmpeg."}
         print(f"✅ Output created: {output_file}")
 
         # Clean up filename from " RAW"
@@ -113,7 +116,7 @@ async def convert_video(request: Request):
                 print(f"🧽 Renamed output to: {new_f}")
                 output_file = new_f
 
-        # Upload
+        # Upload to MinIO
         s3.upload_file(output_file, BUCKET, f"{FOLDER}/{os.path.basename(output_file)}")
         print(f"☁️ Uploaded to MinIO: {FOLDER}/{os.path.basename(output_file)}")
 
