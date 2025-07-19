@@ -1,5 +1,3 @@
-# app.py
-
 import os
 import subprocess
 from urllib.parse import urlparse
@@ -9,6 +7,7 @@ import boto3
 import requests
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import ClientDisconnect
 
 app = FastAPI()
 
@@ -35,7 +34,12 @@ FOLDER = "maketest"
 @app.post("/convert")
 async def convert_video(request: Request):
     try:
-        data = await request.json()
+        try:
+            data = await request.json()
+        except ClientDisconnect:
+            print("⚠️ Client disconnected before sending full request body.")
+            return {"error": "❌ Client disconnected."}
+
         url = data.get("url")
         if not url:
             return {"error": "❌ No URL provided in the request."}
@@ -44,8 +48,9 @@ async def convert_video(request: Request):
         filename = os.path.basename(urlparse(url).path)
         print(f"📄 Extracted filename: {filename}")
 
-        # Add .mov if extension is missing
-        if not os.path.splitext(filename)[1]:
+        # Add .mov if no extension
+        name, ext = os.path.splitext(filename)
+        if not ext:
             filename += ".mov"
             print(f"📛 Appended .mov to filename. New filename: {filename}")
 
@@ -57,7 +62,12 @@ async def convert_video(request: Request):
         with open(filename, "wb") as f:
             f.write(r.content)
         print(f"✅ File saved locally: {filename}")
+        print(f"📏 File size: {os.path.getsize(filename)} bytes")
 
+        # Detect suspicious files
+        if os.path.getsize(filename) < 10000:
+            print("⚠️ File may not be a real video. Possibly an HTML or error page.")
+        
         # Rename if needed
         if "_RAW_V1" in filename:
             newname = filename.replace("_RAW_V1", "")
@@ -70,10 +80,10 @@ async def convert_video(request: Request):
         os.makedirs(folder, exist_ok=True)
         output_file = f"{folder}/{basename}.mp4"
 
-        # FFmpeg command with -y flag to overwrite
+        # Run ffmpeg
         command = [
             "ffmpeg",
-            "-y",  # overwrite without asking
+            "-y",
             "-i", filename,
             "-qscale", "0",
             "-pix_fmt", "yuv420p",
@@ -86,10 +96,8 @@ async def convert_video(request: Request):
         print(" ".join(command))
 
         result = subprocess.run(command, capture_output=True, text=True)
-        print("📄 ffmpeg stdout:")
-        print(result.stdout)
-        print("⚠️ ffmpeg stderr:")
-        print(result.stderr)
+        print("📄 ffmpeg stdout:\n", result.stdout)
+        print("⚠️ ffmpeg stderr:\n", result.stderr)
 
         if result.returncode != 0:
             return {
