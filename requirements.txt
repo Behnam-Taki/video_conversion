@@ -1,5 +1,6 @@
 fastapi
-boto3
-requests
 uvicorn
+requests
+boto3
 gdown
+python-multipart 
