@@ -1,7 +1,8 @@
 import os
 import subprocess
-from urllib.parse import urlparse
 import traceback
+from urllib.parse import urlparse
+import glob
 
 import boto3
 import requests
@@ -19,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# MinIO setup
+# MinIO config
 s3 = boto3.client(
     's3',
     endpoint_url='https://minio-api.farazpardazan.com',
@@ -33,42 +34,39 @@ FOLDER = "maketest"
 @app.post("/convert")
 async def convert_video(request: Request):
     try:
-        # Try to safely extract JSON
+        # Get JSON payload
         try:
             data = await request.json()
-        except Exception as e:
-            print("⚠️ Failed to read JSON body. Possibly empty or client disconnected.")
+        except Exception:
+            print("⚠️ Failed to parse JSON body.")
             return {"error": "❌ Invalid or incomplete JSON body."}
 
         url = data.get("url")
         if not url:
-            return {"error": "❌ No URL provided in the request."}
-        print(f"📥 Request received. Downloading from: {url}")
+            return {"error": "❌ No URL provided."}
+        print(f"📥 Downloading from: {url}")
 
+        # Get filename
         filename = os.path.basename(urlparse(url).path)
-        print(f"📄 Extracted filename: {filename}")
-
-        # Add .mov if no extension
         name, ext = os.path.splitext(filename)
         if not ext:
             filename += ".mov"
-            print(f"📛 Appended .mov to filename. New filename: {filename}")
+            print(f"📛 Appended .mov: {filename}")
 
-        # Download the file
+        # Download video
         r = requests.get(url)
         print(f"📦 Download status code: {r.status_code}")
         if r.status_code != 200:
-            return {"error": f"❌ Failed to download file. Status: {r.status_code}"}
+            return {"error": f"❌ Failed to download. Status {r.status_code}"}
         with open(filename, "wb") as f:
             f.write(r.content)
-        print(f"✅ File saved locally: {filename}")
-        print(f"📏 File size: {os.path.getsize(filename)} bytes")
+        size = os.path.getsize(filename)
+        print(f"✅ File saved: {filename} ({size} bytes)")
 
-        # Detect suspicious files
-        if os.path.getsize(filename) < 10000:
-            print("⚠️ File may not be a real video. Possibly an HTML or error page.")
+        if size < 10000:
+            print("⚠️ File may not be valid (too small).")
 
-        # Rename if needed
+        # Clean filename if needed
         if "_RAW_V1" in filename:
             newname = filename.replace("_RAW_V1", "")
             os.rename(filename, newname)
@@ -80,19 +78,21 @@ async def convert_video(request: Request):
         os.makedirs(folder, exist_ok=True)
         output_file = f"{folder}/{basename}.mp4"
 
-        # Run ffmpeg (chosen stable variant)
+        # Run ffmpeg (tested config)
         command = [
             "ffmpeg",
             "-y",
             "-i", filename,
             "-vf", "fps=24,scale=1080:1920",
             "-c:v", "libx264",
+            "-preset", "ultrafast",
+            "-crf", "23",
             "-c:a", "aac",
             "-strict", "experimental",
             output_file
         ]
 
-        print("🎞 Running ffmpeg command:")
+        print("🎞 ffmpeg command:")
         print(" ".join(command))
 
         result = subprocess.run(command, capture_output=True, text=True)
@@ -101,13 +101,21 @@ async def convert_video(request: Request):
 
         if result.returncode != 0:
             return {
-                "error": "❌ ffmpeg failed during execution.",
+                "error": "❌ ffmpeg failed.",
                 "details": result.stderr
             }
 
         if not os.path.exists(output_file):
-            return {"error": "❌ ffmpeg failed. Output file not found."}
-        print(f"✅ Converted file exists: {output_file}")
+            return {"error": "❌ Output not found after ffmpeg."}
+        print(f"✅ Output created: {output_file}")
+
+        # Rename output file if contains " RAW"
+        for f in glob.glob(f"{folder}/*.mp4"):
+            if " RAW" in f:
+                new_f = f.replace(" RAW", "")
+                os.rename(f, new_f)
+                print(f"🧽 Renamed output to: {new_f}")
+                output_file = new_f  # update path
 
         # Upload to MinIO
         s3.upload_file(output_file, BUCKET, f"{FOLDER}/{os.path.basename(output_file)}")
@@ -120,6 +128,6 @@ async def convert_video(request: Request):
         }
 
     except Exception as e:
-        print("❌ Exception occurred:")
+        print("❌ Exception:")
         traceback.print_exc()
         return {"error": str(e)}
