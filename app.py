@@ -7,7 +7,6 @@ import boto3
 import requests
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.exceptions import ClientDisconnect
 
 app = FastAPI()
 
@@ -34,11 +33,12 @@ FOLDER = "maketest"
 @app.post("/convert")
 async def convert_video(request: Request):
     try:
+        # Try to safely extract JSON
         try:
             data = await request.json()
-        except ClientDisconnect:
-            print("⚠️ Client disconnected before sending full request body.")
-            return {"error": "❌ Client disconnected."}
+        except Exception as e:
+            print("⚠️ Failed to read JSON body. Possibly empty or client disconnected.")
+            return {"error": "❌ Invalid or incomplete JSON body."}
 
         url = data.get("url")
         if not url:
@@ -67,7 +67,7 @@ async def convert_video(request: Request):
         # Detect suspicious files
         if os.path.getsize(filename) < 10000:
             print("⚠️ File may not be a real video. Possibly an HTML or error page.")
-        
+
         # Rename if needed
         if "_RAW_V1" in filename:
             newname = filename.replace("_RAW_V1", "")
